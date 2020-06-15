@@ -76,7 +76,13 @@ def preprocesamiento_movie2(peliculas1,usuarios_peliculas1,item2):
   peliculas2 = peliculas2.loc[peliculas2.loc[:,0].isin(usuarios_comunes) ][2].to_numpy()
   return peliculas1, peliculas2 , usuarios_comunes
 
+def ObtenerID(item1):
+    fila=DFItenId[DFItenId.loc[:,1]==item1][0].values
+    return fila[0]
+
 def coseno_ajustado(pelicula1, pelicula2):
+    pelicula1 = ObtenerID(pelicula1)
+    pelicula2 = ObtenerID(pelicula2)
     columna1,columna2,columnas = preprocesamiento_movie(pelicula1,pelicula2)
     acumulador = 0
     op1=0 
@@ -101,6 +107,8 @@ def coseno_ajustado(pelicula1, pelicula2):
 
 
 def coseno_ajustado2(pelicula1, pelicula2):
+    pelicula1 = ObtenerID(pelicula1)
+    pelicula2 = ObtenerID(pelicula2)
     if Cache_Item==None or Cache_Item!=pelicula1:
         columna1,columna2,columnas = preprocesamiento_movie(pelicula1,pelicula2)
     else:
