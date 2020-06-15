@@ -152,3 +152,105 @@ def coseno_ajustado2(pelicula1, pelicula2):
     return -1
 
 #print(coseno_ajustado2('0451167317','0451454952'))
+
+#BDItems="BX-Books"
+BDItems="movies"
+DFItenId=cargar(BDItems+".csv",',')
+
+
+def generar_matriz(): 
+    tamanio = DFItenId.shape[0]
+    print(tamanio)
+    #matriz = np.empty((tamanio, tamanio))
+    #matriz.fill(np.nan)
+    #matriz= np.empty(tamanio)
+    #matriz.fill(np.nan)
+    matriz={}
+    for iterador2 in range(0,tamanio):
+        aux={}  
+        p=peliculas(DFItenId[0][iterador2]) 
+        
+        for iterador in range(0,p.size):
+            print(iterador)
+            #matriz[iterador2][iterador] = coseno_ajustado(DFItenId[0][iterador2],DFItenId[0][iterador])
+            if not p[iterador] in matriz:
+                aux[p[iterador]]=coseno_ajustado2(DFItenId[0][iterador2],p[iterador])
+            #print(matriz)
+        matriz[DFItenId[0][iterador2]]=aux
+        #print(matriz)
+        with open(BDItems+'MatrizSi.csv', 'a') as employee_file:
+            employee_writer = csv.DictWriter(employee_file, matriz.keys())
+            w.writeheader()
+            employee_writer.writerow(matriz)
+            
+    
+    return matriz
+start_time = time()
+matriz2 = generar_matriz()
+elapsed_time = time() - start_time
+print("Elapsed time: %0.10f seconds." % elapsed_time)
+#print(matriz2)
+
+
+
+
+
+
+"""**PARA MOVIELENS**"""
+
+def preprocesamiento_movie(pelicula1,pelicula2):
+    column1 = df.loc[df.loc[:, 'peliculas'] == pelicula1]
+    column2 = df.loc[df.loc[:, 'peliculas'] == pelicula2]
+    column1 = column1.dropna(axis='columns')
+    column2 = column2.dropna(axis='columns')
+
+    columnas = column2.columns.to_numpy()
+    columnas = columnas[np.in1d(columnas, column1.columns.to_numpy())]
+    column1 = column1[columnas]
+    column2 = column2[columnas]
+    column1 = column1.values[0][1:]
+    column2 = column2.values[0][1:]
+    return column1,column2,columnas[1:]
+
+def coseno_ajustado(pelicula1, pelicula2):
+    columna1,columna2,columnas = preprocesamiento_movie(pelicula1,pelicula2)
+    acumulador = 0
+    op1=0 
+    op2 = 0
+    suma = 0
+    div1 = 0
+    div2 =0
+    if(columna1.size==0):
+        return 0
+    for iterador in range(columna1.size):
+        avg = df[columnas[iterador]].mean()
+        op1 = columna1[iterador] - avg
+        op2 = columna2[iterador] - avg
+        suma += op1*op2
+        div1 += pow(op1,2)
+        div2 += pow(op2,2)
+    if(div2 and div1):
+        resultado = suma/(math.sqrt(div1*div2))
+        return resultado
+    return -1
+
+#coseno_ajustado('Alien','Avatar')
+"""
+#Entorno de ejecución
+tamanio = df['peliculas'].to_numpy().size
+matriz2 = np.empty((tamanio, tamanio))
+matriz2.fill(np.nan)
+def generar_matriz(matriz):    
+    for iterador2 in range(df['peliculas'].size):
+        for iterador in range(iterador2+1,df['peliculas'].size):
+            matriz[iterador2][iterador] = coseno_ajustado(df['peliculas'][iterador2],df['peliculas'][iterador])
+    return matriz
+start_time = time()
+matriz2 = generar_matriz(matriz2)
+elapsed_time = time() - start_time
+print("Elapsed time: %0.10f seconds." % elapsed_time)
+print(matriz2)
+
+matriz_cosenos=pd.DataFrame(matriz2, columns=df['peliculas'], index = df['peliculas']) 
+print(matriz_cosenos)
+"""
