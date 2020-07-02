@@ -1,26 +1,27 @@
 import pandas as pd
-import numpy as np
+import cupy as np
 import math
 from time import time
 from numba import cuda
+from math import sqrt
 import csv
 import os.path
 from os import path
 
+np.cuda.Device(0).use()
 
 class Sistema_recomendacion:
-    def cargar_ratings(self, ruta_archivo,delimit):
+    def cargar_ratings(self, ruta_archivo,delimiter):
         self.ratings = pd.read_csv(
             ruta_archivo,
             sep='"',
-            delimiter=delimit,
-            error_bad_lines=False,
-            header=None)
+            delimiter=delimiter,
+            error_bad_lines=False,header=None)
 
-    def cargar_items(self, ruta_archivo,delimit):
+    def cargar_items(self, ruta_archivo,delimiter):
         self.items = pd.read_csv(
             ruta_archivo,
-            delimiter=delimit,
+            delimiter=delimiter,
             sep='"',
             error_bad_lines=False,
             header=None)
@@ -30,15 +31,15 @@ class Sistema_recomendacion:
         self.items.columns = ['itemId', 'name']
         self.items = self.items.replace(to_replace='"', value='', regex=True)
 
-
     def limpiar_data_cargar_ratings(self):
         self.ratings = self.ratings[[0, 1, 2]]
         self.ratings.columns = ['userId', 'itemId', 'rating']
-        self.ratings = self.ratings.replace(to_replace='"', value='', regex=True)
         self.ratings = self.ratings.astype({
-            "rating": 'int8',
-            'userId': 'int16'
+            "rating": 'float16',
+            'userId': 'int32'
         })
+        self.ratings = pd.merge(self.ratings,self.items ,on = 'itemId')
+        self.ratings = self.ratings[['userId', 'itemId', 'rating']]
 
     def generar_medias(self):
         dataframe = self.ratings
@@ -50,7 +51,6 @@ class Sistema_recomendacion:
         media.columns = ['userId','promedio']
         return media
 
-        
     def distancias_entre_media(self):
         media = self.generar_medias()
         self.ratings = self.ratings.set_index('userId','itemId')
@@ -79,7 +79,104 @@ class Sistema_recomendacion:
           SumC2 += mezclar.loc[i,'adg_rating_y']**2
         return Sum/((SumC1**0.5)*(SumC2**0.5))
 
-          
+    def Person(self, usu1,usu2):
+        list_items1 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu1 ]
+        list_items2 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu2 ]
+        mezclar = pd.merge(list_items1, list_items2, how='inner', on='itemId')
+        rating_x = mezclar[['rating_x']].to_numpy().transpose()[0]
+        rating_y = mezclar[['rating_y']].to_numpy().transpose()[0]
+        car=mezclar.shape[0]
+        if(car==0):
+            return 0
+        Sum1 = np.sum(rating_x)
+        Sum2 = np.sum(rating_y)
+        calc = rating_x.dot( rating_y)
+        SumCu1 = np.sum(pow(rating_x,2))
+        SumCu2 = np.sum(pow(rating_y,2))
+      
+        Denominador=(sqrt(SumCu1-(pow(Sum1,2)/car))) * (sqrt(SumCu2-(pow(Sum2,2)/car)))
+        if(Denominador!=0):
+            Per = (calc - (Sum1*Sum2)/car) / (Denominador)
+            return Per
+        else:
+            return 0
+    def Manhattan(self,usu1,usu2):
+        list_items1 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu1 ]
+        list_items2 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu2 ]
+        mezclar = pd.merge(list_items1, list_items2, how='inner', on='itemId')
+        rating_x = mezclar[['adg_rating_x']].to_numpy().transpose()[0]
+        rating_y = mezclar[['adg_rating_y']].to_numpy().transpose()[0]
+        car=mezclar.shape[0]
+        if(car==0):
+            return 0
+        Man = np.sum(np.absolute(np.subtract(rating_x,rating_y)))
+        return Man
+    def Euclidiana(self,usu1,usu2):
+        list_items1 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu1 ]
+        list_items2 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu2 ]
+        mezclar = pd.merge(list_items1, list_items2, how='inner', on='itemId')
+        rating_x = mezclar[['adg_rating_x']].to_numpy().transpose()[0]
+        rating_y = mezclar[['adg_rating_y']].to_numpy().transpose()[0]
+        car=mezclar.shape[0]
+        if(car==0):
+            return 0
+        Eu = np.sum(pow(rating_x-rating_y,2))
+        return Eu
+    def Minkowski(self,usu1,usu2,r):
+        list_items1 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu1 ]
+        list_items2 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu2 ]
+        mezclar = pd.merge(list_items1, list_items2, how='inner', on='itemId')
+        rating_x = mezclar[['adg_rating_x']].to_numpy().transpose()[0]
+        rating_y = mezclar[['adg_rating_y']].to_numpy().transpose()[0]
+        car=mezclar.shape[0]
+        if(car==0 or r == 0):
+            return 0
+        Mink = np.sum(pow(np.absolute(np.subtract(rating_x,rating_y)),r))
+        return pow(Mink,1/r)
+
+    def Jaccard(self, usu1,usu2):
+        list_items1 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu1 ]
+        list_items2 = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu2 ]
+        mezclar = pd.merge(list_items1, list_items2, how='inner', on='itemId')
+        union = mezclar.shape[0]
+        inter = list_items1.shape[0]+list_items2.shape[0]-union
+        if(union != 0):
+            return float(union-intersection) / union
+        else:
+            return 0
+
+    def Knn(self,usu,item,k):
+        list_usuarios = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == usu ]
+        mezclar = pd.merge(list_usuarios, self.rating_avg, how='inner', on='itemId')
+        mezclar = mezclar.loc[mezclar.loc[:,'userId_y'] != usu ]
+        mezclar = mezclar[['userId_y']].drop_duplicates()
+        Kcercanos = []
+
+        for i in mezclar.values:
+            Metrica = self.Person(usu,i[0])
+            
+            Kcercanos.append((Metrica,i[0]))
+        Kcercanos.sort()
+        Kcercanos = Kcercanos[:k]
+
+        return Kcercanos
+
+    def PredictKnn(self,usu,item,k):
+        Kcercanos = self.Knn(usu,item,k)
+        Kcercanos = np.array(Kcercanos)
+        
+        item = self.items.loc[self.items.loc[:,'name'] == item].index.values[0]
+        Sum = np.sum(Kcercanos[:,0])
+        Pred = 0 
+        Influencer = Kcercanos[:,0]/Sum
+        for i in range(k):
+            list_usuarios = self.rating_avg.loc[self.rating_avg.loc[:,'userId'] == int(Kcercanos[i,1]) ]
+            list_usuarios = list_usuarios.loc[list_usuarios.loc[:,'itemId'] == item ]
+            if(list_usuarios.shape[0]==1):
+                Pred +=  list_usuarios[['rating']].values[0][0]*Influencer[i]
+
+        return Pred
+
 
     def coseno_ajustado2(self,item1,item2,IsID=False):
         if not IsID:
@@ -88,23 +185,23 @@ class Sistema_recomendacion:
         list_items1 = self.rating_avg.loc[self.rating_avg.loc[:,'itemId'] == item1 ]
         list_items2 = self.rating_avg.loc[self.rating_avg.loc[:,'itemId'] == item2 ]
         mezclar = pd.merge(list_items1, list_items2, how='inner', on='userId')
+        
         if(mezclar.shape[0]==0):
-            print("entro")
             return 0
         rating_x = mezclar[['adg_rating_x']].to_numpy().transpose()[0]
         rating_y = mezclar[['adg_rating_y']].to_numpy().transpose()[0]
         potencia_x = np.sum(pow(rating_x,2))
+
         potencia_y = np.sum(pow(rating_y,2))
         calc = rating_y.dot( rating_x )
 
         div = potencia_x*potencia_y
         div = div**0.5
-        print(calc)
-        print(div)
 
         if(div == 0):
             return 0
         calc = calc / div
+
         return calc
 
     
@@ -113,6 +210,7 @@ class Sistema_recomendacion:
         self.datos = pd.merge(self.ratings, self.datos, on='userId')
         self.datos['NR'] = (2*(self.datos['rating']-self.datos['rating_y'])-(self.datos['rating_x'] - self.datos['rating_y'] ))/(self.datos['rating_x']-self.datos['rating_y'])
 
+
     def Predecir2(self,usuario,item):
         item = self.items.loc[self.items.loc[:,'name'] == item].index.values[0]
         ratings = self.datos.loc[self.datos.loc[:,'userId'] == usuario]
@@ -120,8 +218,6 @@ class Sistema_recomendacion:
         SumPre = 0.0
         for index, row in ratings.iterrows():
             x= self.coseno_ajustado2(item,row['itemId'],True)
-            #print("Cos: ", x)
-            #print("ID: ",row['itemId'])
             y= x * row['NR']
             SumRa += abs(x)
             SumPre += y
@@ -175,13 +271,14 @@ class Sistema_recomendacion:
         list_items1 = self.ratings.loc[self.ratings.loc[:,'itemId'] == item1]
         list_items2 = self.ratings.loc[self.ratings.loc[:,'itemId'] == item2]
         list_merge = pd.merge(list_items1, list_items2, how='inner', on='userId')
+
         list_items1 = list_merge[['rating_x']].to_numpy()
         list_items2 = list_merge[['rating_y']].to_numpy()
         Cardi = len(list_items1)
         if not Cardi:
             return 0 , 0
-        list_items = np.subtract(list_items2,list_items1)
-        list_items = np.sum(np.true_divide(list_items, Cardi))
+        list_items = list_items2-list_items1
+        list_items = np.sum(list_items/Cardi)
         return list_items,Cardi
 
     def Slope_One(self,usuario,item):
@@ -200,14 +297,14 @@ class Sistema_recomendacion:
 
 def main():
     movies = Sistema_recomendacion()
-    movies.cargar_ratings('MovieRatings.csv',',')
-    movies.cargar_items('MovieRatingsItem.csv',',')
+    movies.cargar_ratings('BX-Book-Ratings.csv',';')
+    movies.cargar_items('BX-Books.csv','";"')
     movies.limpiar_data_cargar_items()
     movies.limpiar_data_cargar_ratings()
-    movies.generar_medias()
     movies.distancias_entre_media()
     movies.Normalizar2()
-    #movies.mostrar(movies.ratings)
+    #print(movies.rating_avg.loc[434,'adg_rating'])
+    #movies.mostrar(movies.rating_avg)
     #movies.mostrar(movies.datos)
     
 
@@ -231,9 +328,13 @@ def main():
     elapsed_time = time() - start_time
     print("Franco elapsed time: %0.10f seconds." % elapsed_time)
     """
-    movies.mostrar(movies.rating_avg)
+    #movies.mostrar(movies.rating_avg)
+    ID = 252903
+    Name = 'Wo das Meer den Himmel umarmt.'
     start_time = time()
-    print(movies.Slope_One(1,'Village'))
+    print(ID,"-----",Name)
+    print(movies.PredictKnn(ID,Name,5))
+    #print(movies.coseno_ajustado2('Dodgeball','Forest Gump'))
     elapsed_time = time() - start_time
     print("elapsed time: %0.10f seconds." % elapsed_time)
 main()
